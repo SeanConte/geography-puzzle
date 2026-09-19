@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Regional Geography Map Lab</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<style>
+:root{
+  --water:#dcebee;--land:#eee6d6;--coast:#716a60;--region:#58636a;
+  --ink:#202529;--muted:#647078;--panel:rgba(255,253,248,.96);--line:#d2ccc0;
+  --accent:#3e6878;--p0:#d77f59;--p1:#639388;--p2:#d2aa51;--p3:#7c83aa;--p4:#a97086;
+}
+*{box-sizing:border-box}
+html,body,#app{margin:0;width:100%;height:100%;overflow:hidden}
+body{font:15px/1.3 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:var(--water)}
+button,select{font:inherit}
+button,select{min-height:42px;border:1px solid var(--line);border-radius:10px;color:var(--ink);background:#fffdf8;padding:8px 11px}
+button{cursor:pointer} button:disabled{opacity:.42;cursor:default} button:not(:disabled):active{transform:translateY(1px)}
+#app{position:relative;height:100vh;height:100dvh;background:var(--water)}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;background:var(--water)}
+#map.map-paused{cursor:default} #map:not(.map-paused):active{cursor:grabbing}
+.topbar{position:absolute;z-index:30;left:12px;top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:calc(100% - 316px)}
+.group{display:flex;gap:6px;align-items:center;padding:5px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 1px 4px rgba(30,30,30,.08)}
+.group select{max-width:310px}.stats{font-size:13px;padding:7px 8px;white-space:nowrap}.primary{background:var(--accent);border-color:var(--accent);color:white;font-weight:700}
+.legend{position:absolute;z-index:18;left:12px;top:75px;display:flex;gap:12px;align-items:center;padding:6px 9px;border:1px solid var(--line);border-radius:9px;background:var(--panel);font-size:11px;color:var(--muted);pointer-events:none}
+.swatch{display:inline-block;width:22px;border-top:2px solid var(--coast);margin-right:4px;vertical-align:middle}.swatch.dash{border-top:2px dashed var(--region)}
+.bank{position:absolute;z-index:26;right:12px;top:12px;bottom:12px;width:284px;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--panel);box-shadow:0 2px 10px rgba(30,30,30,.12);transition:transform .18s ease}
+.bankHead{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border-bottom:1px solid var(--line)}
+.bankTitle strong{display:block;font-size:14px}.bankTitle span{display:block;color:var(--muted);font-size:10.5px;margin-top:1px}.bankToggle{min-height:36px;padding:6px 9px}
+.bankGrid{overflow:auto;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:7px;align-content:start}
+.bankItem{position:relative;min-height:96px;padding:6px;border:1px solid var(--line);border-radius:10px;background:#fff;user-select:none}
+.bankItem.active{background:#f8f3e9;border-color:#aaa294}.bankItem.locked{background:#edf3f3;border-color:#96abb1}.bankItem.selected{outline:3px solid var(--accent);outline-offset:1px}
+.bankItem svg{display:block;width:100%;height:55px}.bankItem path{stroke:#252a2d;stroke-width:.72;vector-effect:non-scaling-stroke}
+.bankName{font-size:11.5px;font-weight:700;line-height:1.12;text-align:center}.bankState{font-size:9.8px;color:var(--muted);text-align:center;margin-top:2px}
+.bankScore{position:absolute;right:4px;top:4px;padding:1px 4px;border:1px solid var(--line);border-radius:5px;background:rgba(255,253,248,.95);font-size:9px;font-weight:700}
+.status{position:absolute;z-index:24;left:12px;bottom:12px;max-width:calc(100% - 320px);padding:8px 10px;border:1px solid var(--line);border-radius:11px;background:var(--panel);box-shadow:0 1px 5px rgba(30,30,30,.08);font-size:12.5px;color:var(--muted)}
+.status strong{color:var(--ink)}.scoreSummary{display:none;margin-top:4px;color:var(--ink)}
+.lockFloat{position:absolute;z-index:35;display:none;left:14px;bottom:72px;width:48px;height:48px;min-height:48px;align-items:center;justify-content:center;padding:0;border-radius:50%;background:var(--panel);border:1px solid var(--line);box-shadow:0 2px 8px rgba(30,30,30,.15);font-size:21px;line-height:1}
+.lockFloat.visible{display:flex}.lockFloat.locked{background:var(--accent);color:#fff;border-color:var(--accent)}
+.land{fill:var(--land);stroke:var(--coast);stroke-width:1.35;vector-effect:non-scaling-stroke}
+.regionEdge{fill:none;stroke:var(--region);stroke-width:2.1;stroke-dasharray:7 5;vector-effect:non-scaling-stroke;pointer-events:none}
+.userPiece{stroke:#fffdf8;stroke-width:1.25;vector-effect:non-scaling-stroke;cursor:grab;touch-action:none}.userPiece:active{cursor:grabbing}
+.userPiece.lockedPiece{stroke:var(--accent);stroke-width:1.8;cursor:pointer}.userPiece.selectedPiece{stroke:var(--ink);stroke-width:2.7}
+.hint{fill:rgba(62,104,120,.15);stroke:var(--accent);stroke-width:3;vector-effect:non-scaling-stroke;pointer-events:none}
+.targetDot{fill:var(--accent);stroke:white;stroke-width:1.5;vector-effect:non-scaling-stroke;pointer-events:none}
+.scoreLine{fill:none;stroke:var(--region);stroke-width:1.25;stroke-dasharray:4 3;opacity:.72;vector-effect:non-scaling-stroke;pointer-events:none}
+.scoreTarget{fill:#fffdf8;stroke:var(--region);stroke-width:1.7;vector-effect:non-scaling-stroke;pointer-events:none}
+.loadingShade{position:absolute;z-index:60;inset:0;display:none;align-items:center;justify-content:center;background:rgba(220,235,238,.72);backdrop-filter:blur(2px)}
+.loadingShade.visible{display:flex}.loadingBox{max-width:310px;padding:15px 18px;border:1px solid var(--line);border-radius:13px;background:var(--panel);text-align:center}.loadingBox strong{display:block;margin-bottom:4px}
+.c0{fill:var(--p0)}.c1{fill:var(--p1)}.c2{fill:var(--p2)}.c3{fill:var(--p3)}.c4{fill:var(--p4)}
+@media(max-width:820px){
+  .topbar{left:8px;right:8px;top:8px;max-width:none}.group{padding:4px}.regionGroup{width:100%}.regionGroup select{flex:1;min-width:0;max-width:none}.legend{display:none}
+  .bank{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-height:34dvh;border-radius:14px}.bank.collapsed{transform:translateY(calc(100% - 48px))}
+  .bankGrid{grid-template-columns:repeat(3,1fr)}.status{left:8px;right:8px;bottom:calc(34dvh + 16px);max-width:none;font-size:11.5px}.lockFloat{left:10px;bottom:calc(34dvh + 76px)}
+}
+@media(max-width:520px){
+  .group button{padding-left:9px;padding-right:9px}.stats{font-size:12px}.bankGrid{grid-template-columns:repeat(3,1fr)}.bankItem{min-height:84px;padding:4px}.bankItem svg{height:43px}.bankName{font-size:10.5px}.bankState{font-size:9px}
+}
+@media(min-width:821px){.bank.collapsed{transform:translateX(calc(100% - 48px))}}
+</style>
+</head>
+<body>
+<div id="app">
+  <svg id="map" role="application" aria-label="Regional geography placement map">
+    <rect id="waterRect" x="0" y="0" fill="var(--water)"></rect>
+    <g id="zoomLayer">
+      <g id="baseLayer"></g>
+      <g id="regionEdgeLayer"></g>
+      <g id="scoreLayer"></g>
+      <g id="lockedLayer"></g>
+      <g id="placedLayer"></g>
+      <g id="selectedLayer"></g>
+      <g id="hintLayer"></g>
+    </g>
+  </svg>
+
+  <div class="topbar">
+    <div class="group regionGroup">
+      <select id="modeSelect" aria-label="Choose geography puzzle"></select>
+      <span class="stats"><strong id="placedCount">0</strong>/<span id="totalCount">0</span> · <span id="lockedCount">0</span> locked</span>
+    </div>
+    <div class="group">
+      <button id="zoomOut" type="button" aria-label="Zoom out">−</button>
+      <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+      <button id="resetView" type="button">Reset</button>
+    </div>
+    <div class="group">
+      <button id="hintBtn" type="button" disabled>Hint</button>
+      <button id="checkBtn" class="primary" type="button" disabled>Check</button>
+      <button id="restartBtn" type="button">Restart</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i class="swatch"></i>coast</span>
+    <span><i class="swatch dash"></i>puzzle-region edge</span>
+  </div>
+
+  <aside id="bank" class="bank" aria-label="Geography piece bank">
+    <div class="bankHead">
+      <div class="bankTitle">
+        <strong id="bankHeading">Country bank</strong>
+        <span>Tap to add/remove. Drag the full-size map piece.</span>
+      </div>
+      <button id="bankToggle" class="bankToggle" type="button">Hide</button>
+    </div>
+    <div id="bankGrid" class="bankGrid"></div>
+  </aside>
+
+  <button id="lockFloat" class="lockFloat" type="button" aria-label="Lock selected piece" title="Lock selected piece">🔓</button>
+
+  <div class="status" aria-live="polite">
+    <div id="message">Loading map…</div>
+    <div id="scoreSummary" class="scoreSummary"></div>
+  </div>
+
+  <div id="loadingShade" class="loadingShade">
+    <div class="loadingBox">
+      <strong>Loading subdivision boundaries…</strong>
+      <span>State/province modes use a more detailed worldwide boundary file. The first load can take a moment.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(async function(){
+  const EARTH_KM=6371.0088;
+  const WORLD_URL="https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json";
+  const ADMIN1_URLS=[
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson",
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_admin_1_states_provinces.geojson"
+  ];
+
+  let world;
+  try{ world=await d3.json(WORLD_URL); }
+  catch(err){
+    document.getElementById("message").textContent="Could not load geographic data. This HTML file needs an internet connection when opened.";
+    return;
+  }
+
+  const rawCountries=topojson.feature(world,world.objects.countries).features;
+  const rawById=new Map(rawCountries.map(f=>[+f.id,f]));
+  const geometries=world.objects.countries.geometries;
+  const giById=new Map(geometries.map((g,i)=>[+g.id,i]));
+  const countryNeighbors=topojson.neighbors(geometries);
+  const rawLand=world.objects.land ? topojson.feature(world,world.objects.land) : topojson.merge(world,geometries);
+
+  let admin1Data=null;
+  let admin1Promise=null;
+
+  const COUNTRY_MODES={
+    "Western & Central Europe":{ids:[40,56,203,250,276,372,442,528,620,724,756,826],box:[-16,33,32,73],note:"Atlantic and central European core."},
+    "Nordic & Baltic Europe":{ids:[208,233,246,352,428,440,578,752],box:[-30,35,52,73],note:"Nordic countries plus Estonia, Latvia, and Lithuania."},
+    "Balkans & Eastern Europe":{ids:[8,70,100,112,191,300,348,498,499,807,616,642,688,703,705,804],box:[10,45,33,61],note:"Balkans plus east-central and eastern Europe."},
+    "Middle East":{ids:[48,364,368,376,400,414,422,512,275,634,682,760,792,784,887],box:[24,63,11,44],note:"Türkiye through the Levant, Iraq and Iran, then south through the Gulf and Yemen."},
+    "Caucasus & Central Asia":{ids:[31,51,268,398,417,762,795,860],box:[38,90,32,58],note:"Georgia, Armenia, Azerbaijan, and the five Central Asian republics."},
+    "South Asia":{ids:[4,50,64,356,462,524,586,144],box:[55,98,4,41],note:"Afghanistan and the Indian subcontinent."},
+    "East Asia":{ids:[156,392,408,410,496],box:[98,151,17,56],note:"China, Mongolia, Japan, North Korea, and South Korea."},
+    "Southeast Asia":{ids:[96,116,360,418,458,104,608,702,764,626,704],box:[88,145,-15,29],note:"Mainland and maritime Southeast Asia."},
+    "North Africa":{ids:[12,818,434,504,729,788,732],box:[-20,41,13,39],note:"Mediterranean North Africa plus Sudan and Western Sahara."},
+    "Sahel":{ids:[854,148,270,466,478,562,686],box:[-20,25,5,25],note:"Burkina Faso, Chad, Gambia, Mali, Mauritania, Niger, and Senegal."},
+    "West African Coast":{ids:[204,132,384,288,324,624,430,566,694,768],box:[-27,18,-2,20],note:"Coastal West Africa plus Cabo Verde."},
+    "Central Africa":{ids:[120,140,180,226,266,178,678],box:[5,32,-16,17],note:"Central African states around the Congo basin."},
+    "Horn & East Africa":{ids:[108,174,262,232,231,404,646,690,706,728,834,800],box:[27,56,-16,20],note:"The Horn and East African corridor through Tanzania."},
+    "Southern Africa":{ids:[24,72,426,450,454,508,480,516,710,748,894,716],box:[10,59,-39,7],note:"Southern mainland Africa plus Madagascar and Mauritius."},
+    "North America":{ids:[124,484,840],box:[-180,-50,5,85],note:"Canada, Mexico, and the United States. Alaska is retained; Hawaii is omitted to preserve continental scale."},
+    "Central America":{ids:[84,188,222,320,340,558,591],box:[-95,-75,5,24],note:"Belize through Panama."},
+    "Caribbean":{ids:[28,44,52,192,212,214,308,332,388,659,662,670,780],box:[-90,-58,7,29],note:"Sovereign Caribbean states represented in the atlas."},
+    "Northern & Andean South America":{ids:[68,170,218,328,604,740,862],box:[-85,-47,-26,16],note:"Bolivia, Colombia, Ecuador, Guyana, Peru, Suriname, and Venezuela."},
+    "Southern South America":{ids:[32,76,152,600,858],box:[-82,-31,-59,9],note:"Argentina, Brazil, Chile, Paraguay, and Uruguay."},
+    "Oceania":{ids:[36,242,296,584,583,520,554,585,598,882,90,776,798,548],box:[108,-145,-50,25],note:"Australia, New Zealand, and sovereign Pacific island states represented in the atlas."}
+  };
+
+  const SUBDIVISION_MODES={
+    "United States — States (contiguous 48)":{a3:"USA",parentId:840,exclude:["US-AK","US-HI","US-DC","US-PR"],note:"The contiguous 48 states. Alaska, Hawaii, D.C., and territories are omitted from this board."},
+    "Canada — Provinces & Territories":{a3:"CAN",parentId:124,note:"Canada's provinces and territories."},
+    "Mexico — States":{a3:"MEX",parentId:484,note:"Mexico's first-order state-level divisions."},
+    "Brazil — States & Federal District":{a3:"BRA",parentId:76,note:"Brazilian states plus the Federal District."},
+    "Argentina — Provinces":{a3:"ARG",parentId:32,note:"Argentina's provincial-level divisions."},
+    "Germany — States (Länder)":{a3:"DEU",parentId:276,note:"Germany's 16 Länder."},
+    "South Africa — Provinces":{a3:"ZAF",parentId:710,note:"South Africa's nine provinces."},
+    "India — States & Union Territories":{a3:"IND",parentId:356,note:"India's state- and union-territory-level divisions represented by the boundary dataset."},
+    "China — Provincial-level Divisions":{a3:"CHN",parentId:156,note:"China's provincial-level divisions represented by the boundary dataset."},
+    "Japan — Prefectures":{a3:"JPN",parentId:392,note:"Japan's prefectures."},
+    "Russia — Federal Subjects":{a3:"RUS",parentId:643,note:"Russia's first-order federal-subject divisions represented by the boundary dataset."},
+    "Australia — States & Territories":{a3:"AUS",parentId:36,allow:["AU-ACT","AU-NSW","AU-NT","AU-QLD","AU-SA","AU-TAS","AU-VIC","AU-WA"],note:"Australia's six states plus the ACT and Northern Territory."}
+  };
+
+  const MODES=new Map();
+  Object.entries(COUNTRY_MODES).forEach(([label,def])=>MODES.set("country:"+label,{...def,label,type:"country"}));
+  Object.entries(SUBDIVISION_MODES).forEach(([label,def])=>MODES.set("admin1:"+label,{...def,label,type:"admin1"}));
+
+  const nameOverrides={132:"Cabo Verde",178:"Republic of the Congo",180:"DR Congo",203:"Czechia",275:"Palestine",384:"Côte d’Ivoire",408:"North Korea",410:"South Korea",418:"Laos",498:"Moldova",626:"Timor-Leste",748:"Eswatini",807:"North Macedonia",834:"Tanzania",704:"Vietnam",826:"United Kingdom",840:"United States"};
+
+  function countryName(f){ return nameOverrides[+f.id] || (f.properties&&f.properties.name) || `Country ${f.id}`; }
+  function prop(p,...keys){ for(const k of keys){ if(p&&p[k]!=null&&p[k]!=="") return p[k]; } return null; }
+  function adminA3(f){ return String(prop(f.properties,"adm0_a3","ADM0_A3")||""); }
+  function adminCode(f){ return String(prop(f.properties,"iso_3166_2","ISO_3166_2","adm1_code","ADM1_CODE")||""); }
+  function adminName(f){ return String(prop(f.properties,"name_en","NAME_EN","name","NAME")||adminCode(f)||"Subdivision"); }
+
+  function lonInBox(lon,west,east){ return west<=east ? lon>=west&&lon<=east : (lon>=west||lon<=east); }
+  function pointInBox(p,box){ return lonInBox(p[0],box[0],box[1]) && p[1]>=box[2] && p[1]<=box[3]; }
+
+  function regionalizeCountry(raw,def){
+    if(!raw) return null;
+    if(raw.geometry.type==="Polygon") return raw;
+    if(raw.geometry.type!=="MultiPolygon") return raw;
+    const polys=[];
+    raw.geometry.coordinates.forEach(coords=>{
+      const feature={type:"Feature",id:raw.id,properties:raw.properties,geometry:{type:"Polygon",coordinates:coords}};
+      const c=d3.geoCentroid(feature);
+      let keep=pointInBox(c,def.box);
+      if(+raw.id===840 && c[0]<-130 && c[1]<32) keep=false;
+      if(keep) polys.push(coords);
+    });
+    if(!polys.length) return raw;
+    return {type:"Feature",id:raw.id,properties:raw.properties,geometry:{type:"MultiPolygon",coordinates:polys}};
+  }
+
+  async function ensureAdmin1(){
+    if(admin1Data) return admin1Data;
+    if(admin1Promise) return admin1Promise;
+
+    const shade=document.getElementById("loadingShade");
+    shade.classList.add("visible");
+
+    admin1Promise=(async()=>{
+      let lastError=null;
+
+      for(const url of ADMIN1_URLS){
+        try{
+          const response=await fetch(url,{mode:"cors",cache:"force-cache"});
+          if(!response.ok){
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data=await response.json();
+
+          if(!data || !Array.isArray(data.features) || !data.features.length){
+            throw new Error("Subdivision file was empty or invalid.");
+          }
+
+          admin1Data=data;
+          return data;
+        }catch(err){
+          lastError=err;
+        }
+      }
+
+      throw new Error(
+        `Subdivision boundary download failed from both sources${lastError ? ` (${lastError.message})` : ""}.`
+      );
+    })().finally(()=>{
+      admin1Promise=null;
+      shade.classList.remove("visible");
+    });
+
+    return admin1Promise;
+  }
+
+  const modeSelect=document.getElementById("modeSelect");
+  const countryGroup=document.createElement("optgroup");
+  countryGroup.label="Country-region puzzles";
+  Object.keys(COUNTRY_MODES).forEach(label=>{
+    const o=document.createElement("option");o.value="country:"+label;o.textContent=label;countryGroup.appendChild(o);
+  });
+  modeSelect.appendChild(countryGroup);
+
+  const subdivisionGroup=document.createElement("optgroup");
+  subdivisionGroup.label="States / provinces / first-order divisions";
+  Object.keys(SUBDIVISION_MODES).forEach(label=>{
+    const o=document.createElement("option");o.value="admin1:"+label;o.textContent=label;subdivisionGroup.appendChild(o);
+  });
+  modeSelect.appendChild(subdivisionGroup);
+  modeSelect.value="country:Middle East";
+
+  const svg=d3.select("#map"), mapNode=document.getElementById("map"), waterRect=d3.select("#waterRect");
+  const zoomLayer=svg.select("#zoomLayer"),baseLayer=svg.select("#baseLayer"),regionEdgeLayer=svg.select("#regionEdgeLayer"),scoreLayer=svg.select("#scoreLayer"),lockedLayer=svg.select("#lockedLayer"),placedLayer=svg.select("#placedLayer"),selectedLayer=svg.select("#selectedLayer"),hintLayer=svg.select("#hintLayer");
+
+  let currentModeKey="",currentMode=null,puzzleFeatures=[],featureByKey=new Map(),regionCountryIds=new Set(),projection=null,path=null,colors=new Map();
+  let positions=new Map(),lockedIds=new Set(),zOrder=new Map(),nextZ=1,scores=new Map(),selectedId=null,currentTransform=d3.zoomIdentity,activePieceDrag=null,hintTimer=null,viewport={w:1000,h:700},resizeTimer=null;
+
+  function featureKey(f){
+    if(currentMode.type==="country") return String(f.id);
+    return "a1:"+adminCode(f)+":"+adminName(f);
+  }
+  function featureName(f){ return currentMode.type==="country" ? countryName(f) : adminName(f); }
+
+  const zoom=d3.zoom().scaleExtent([1,10]).filter(event=>{
+    if(selectedId!==null) return false;
+    const t=event.target;
+    return !(t&&t.classList&&t.classList.contains("userPiece"));
+  }).on("zoom",event=>{
+    currentTransform=event.transform;
+    zoomLayer.attr("transform",currentTransform);
+  });
+  svg.call(zoom);
+
+  function isMobile(){ return window.matchMedia("(max-width:820px)").matches; }
+  function getFitExtent(){
+    const {w,h}=viewport;
+    if(isMobile()) return [[Math.max(18,w*.045),Math.max(90,h*.12)],[w-Math.max(18,w*.045),h*.61]];
+    const bankWidth=296;
+    return [[Math.max(28,w*.035),Math.max(70,h*.095)],[w-bankWidth-82,h-Math.max(38,h*.06)]];
+  }
+  function rebuildProjection(){
+    projection=d3.geoEqualEarth().fitExtent(getFitExtent(),{type:"FeatureCollection",features:puzzleFeatures});
+    path=d3.geoPath(projection);
+  }
+
+  function assignCountryColors(fs){
+    const ids=new Set(fs.map(f=>+f.id)),out=new Map();
+    const ordered=[...fs].sort((a,b)=>{
+      const ai=giById.get(+a.id),bi=giById.get(+b.id);
+      const an=(countryNeighbors[ai]||[]).filter(n=>ids.has(+geometries[n].id)).length;
+      const bn=(countryNeighbors[bi]||[]).filter(n=>ids.has(+geometries[n].id)).length;
+      return bn-an;
+    });
+    for(const f of ordered){
+      const gi=giById.get(+f.id);
+      const used=new Set((countryNeighbors[gi]||[]).map(n=>out.get(+geometries[n].id)).filter(v=>v!==undefined));
+      let c=0;while(used.has(c)&&c<4)c++;
+      out.set(featureKey(f),c);
+    }
+    return out;
+  }
+
+  function stableHash(s){ let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0; }
+  function assignAdminColors(fs){
+    const out=new Map();
+    [...fs].sort((a,b)=>featureName(a).localeCompare(featureName(b))).forEach((f,i)=>{
+      const k=featureKey(f);
+      out.set(k,(stableHash(k)+i)%5);
+    });
+    return out;
+  }
+
+  function drawBase(){
+    baseLayer.selectAll("*").remove();regionEdgeLayer.selectAll("*").remove();scoreLayer.selectAll("*").remove();hintLayer.selectAll("*").remove();
+    baseLayer.append("path").datum(rawLand).attr("class","land").attr("d",path);
+    const boundary=topojson.mesh(world,world.objects.countries,(a,b)=>{
+      if(!a||!b) return false;
+      return regionCountryIds.has(+a.id)!==regionCountryIds.has(+b.id);
+    });
+    regionEdgeLayer.append("path").datum(boundary).attr("class","regionEdge").attr("d",path);
+  }
+
+  function miniSvg(f){
+    const p=d3.geoEqualEarth().fitExtent([[5,5],[95,61]],f);
+    const d=d3.geoPath(p)(f)||"",c=colors.get(featureKey(f))||0;
+    return `<svg viewBox="0 0 100 66" aria-hidden="true"><path class="c${c}" d="${d.replaceAll('"','&quot;')}"></path></svg>`;
+  }
+
+  function visibleSpawnScreenPoint(){
+    const {w,h}=viewport;
+    if(isMobile()) return [w*.52,h*.42];
+    const bankLeft=w-296,freeRight=Math.max(160,bankLeft-30);
+    return [freeRight*.58,h*.50];
+  }
+  function spawnLonLat(){
+    const underlying=currentTransform.invert(visibleSpawnScreenPoint());
+    return projection.invert(underlying);
+  }
+  function selectedFeature(){ return selectedId===null?null:featureByKey.get(selectedId); }
+
+  function invalidateScores(){
+    if(!scores.size)return;
+    scores.clear();scoreLayer.selectAll("*").remove();
+    const s=document.getElementById("scoreSummary");s.style.display="none";s.innerHTML="";
+  }
+
+  function updateControls(){
+    const hasSelection=selectedId!==null;
+    document.getElementById("placedCount").textContent=String(positions.size);
+    document.getElementById("totalCount").textContent=String(puzzleFeatures.length);
+    document.getElementById("lockedCount").textContent=String(lockedIds.size);
+    document.getElementById("checkBtn").disabled=positions.size!==puzzleFeatures.length||hasSelection;
+    document.getElementById("hintBtn").disabled=!hasSelection;
+    document.getElementById("zoomIn").disabled=hasSelection;
+    document.getElementById("zoomOut").disabled=hasSelection;
+    document.getElementById("resetView").disabled=hasSelection;
+    mapNode.classList.toggle("map-paused",hasSelection);
+
+    const lockButton=document.getElementById("lockFloat");
+    if(!hasSelection){
+      lockButton.classList.remove("visible","locked");lockButton.textContent="🔓";return;
+    }
+    const isLocked=lockedIds.has(selectedId);
+    lockButton.classList.add("visible");lockButton.classList.toggle("locked",isLocked);lockButton.textContent=isLocked?"🔒":"🔓";
+    lockButton.setAttribute("aria-label",isLocked?"Unlock selected piece":"Lock selected piece");
+    lockButton.title=isLocked?"Unlock selected piece":"Lock selected piece";
+  }
+
+  function renderBank(){
+    const grid=document.getElementById("bankGrid");grid.innerHTML="";
+    [...puzzleFeatures].sort((a,b)=>featureName(a).localeCompare(featureName(b))).forEach(f=>{
+      const id=featureKey(f),active=positions.has(id),locked=lockedIds.has(id);
+      const b=document.createElement("button");b.type="button";
+      b.className="bankItem"+(active?" active":"")+(locked?" locked":"")+(selectedId===id?" selected":"");
+      b.setAttribute("aria-pressed",active?"true":"false");
+      let state="tap to place";if(active&&locked)state="locked · tap to remove";else if(active)state="on map · tap to remove";
+      b.innerHTML=miniSvg(f)+`<div class="bankName">${featureName(f)}</div><div class="bankState">${state}</div>`+(scores.has(id)?`<div class="bankScore">${Math.round(scores.get(id)).toLocaleString()} km</div>`:"");
+      b.addEventListener("click",()=>{
+        if(active){
+          positions.delete(id);lockedIds.delete(id);zOrder.delete(id);scores.delete(id);
+          if(selectedId===id)selectedId=null;
+          invalidateScores();
+          document.getElementById("message").textContent=`${featureName(f)} removed. Tap its bank icon to add it again.`;
+        }else{
+          positions.set(id,spawnLonLat()||d3.geoCentroid(f));lockedIds.delete(id);zOrder.set(id,nextZ++);selectedId=id;invalidateScores();
+          document.getElementById("message").textContent=`${featureName(f)} added in the area you are viewing. Drag it into position; tap empty map space to deselect.`;
+        }
+        renderPieces();renderBank();updateControls();
+      });
+      grid.appendChild(b);
+    });
+  }
+
+  function pieceSortValue(id){return zOrder.get(id)||0}
+  function drawPieceInto(layer,f,id,extraClass){
+    const ll=positions.get(id);if(!ll)return;
+    const placedPixel=projection(ll);if(!placedPixel)return;
+    const trueCent=path.centroid(f),c=colors.get(id)||0;
+    const p=layer.append("path").datum(f).attr("d",path).attr("class",`userPiece c${c} ${extraClass||""}`)
+      .attr("transform",`translate(${placedPixel[0]-trueCent[0]},${placedPixel[1]-trueCent[1]})`).attr("data-id",id);
+    p.on("pointerdown",event=>beginPieceInteraction(event,f));p.on("click",event=>event.stopPropagation());
+  }
+
+  function renderPieces(){
+    lockedLayer.selectAll("*").remove();placedLayer.selectAll("*").remove();selectedLayer.selectAll("*").remove();
+    const all=puzzleFeatures.filter(f=>positions.has(featureKey(f)));
+    const locked=all.filter(f=>lockedIds.has(featureKey(f))&&selectedId!==featureKey(f)).sort((a,b)=>pieceSortValue(featureKey(a))-pieceSortValue(featureKey(b)));
+    const placed=all.filter(f=>!lockedIds.has(featureKey(f))&&selectedId!==featureKey(f)).sort((a,b)=>pieceSortValue(featureKey(a))-pieceSortValue(featureKey(b)));
+    locked.forEach(f=>drawPieceInto(lockedLayer,f,featureKey(f),"lockedPiece"));
+    placed.forEach(f=>drawPieceInto(placedLayer,f,featureKey(f),""));
+    if(selectedId!==null){
+      const f=featureByKey.get(selectedId);
+      if(f&&positions.has(selectedId))drawPieceInto(selectedLayer,f,selectedId,(lockedIds.has(selectedId)?"lockedPiece ":"")+"selectedPiece");
+    }
+  }
+
+  function pointerToMapPixel(clientX,clientY){
+    const p=mapNode.createSVGPoint();p.x=clientX;p.y=clientY;
+    const local=p.matrixTransform(mapNode.getScreenCTM().inverse());
+    return currentTransform.invert([local.x,local.y]);
+  }
+
+  function beginPieceInteraction(event,f){
+    event.preventDefault();event.stopPropagation();
+    const id=featureKey(f);
+    if(selectedId!==id){
+      selectedId=id;zOrder.set(id,nextZ++);renderPieces();renderBank();updateControls();
+    }
+    if(lockedIds.has(id)){
+      document.getElementById("message").textContent=`${featureName(f)} is locked. Use the lock icon to unlock it before moving it.`;
+      return;
+    }
+    const node=event.currentTarget,pointer=pointerToMapPixel(event.clientX,event.clientY),currentPixel=projection(positions.get(id));
+    const offset=[currentPixel[0]-pointer[0],currentPixel[1]-pointer[1]];
+    activePieceDrag={id,pointerId:event.pointerId,offset,startX:event.clientX,startY:event.clientY,moved:false};
+    try{node.setPointerCapture(event.pointerId)}catch{}
+    const move=ev=>{
+      if(!activePieceDrag||ev.pointerId!==activePieceDrag.pointerId)return;
+      if(Math.hypot(ev.clientX-activePieceDrag.startX,ev.clientY-activePieceDrag.startY)>3)activePieceDrag.moved=true;
+      const pt=pointerToMapPixel(ev.clientX,ev.clientY),target=[pt[0]+activePieceDrag.offset[0],pt[1]+activePieceDrag.offset[1]],ll=projection.invert(target);
+      if(!ll)return;
+      positions.set(id,ll);const trueCent=path.centroid(f);
+      d3.select(node).attr("transform",`translate(${target[0]-trueCent[0]},${target[1]-trueCent[1]})`);
+    };
+    const finish=ev=>{
+      if(!activePieceDrag||ev.pointerId!==activePieceDrag.pointerId)return;
+      node.removeEventListener("pointermove",move);node.removeEventListener("pointerup",finish);node.removeEventListener("pointercancel",cancel);
+      try{node.releasePointerCapture(ev.pointerId)}catch{}
+      const moved=activePieceDrag.moved;activePieceDrag=null;
+      if(moved){invalidateScores();document.getElementById("message").textContent=`${featureName(f)} adjusted. Tap empty map space to deselect, or use the lock icon to lock it.`}
+      else document.getElementById("message").textContent=`${featureName(f)} selected. Drag it, lock/unlock it, or tap empty map space to deselect.`;
+      renderPieces();renderBank();updateControls();
+    };
+    const cancel=()=>{activePieceDrag=null;renderPieces();renderBank();updateControls()};
+    node.addEventListener("pointermove",move);node.addEventListener("pointerup",finish);node.addEventListener("pointercancel",cancel);
+  }
+
+  function deselect(){
+    if(selectedId===null)return;
+    const f=selectedFeature(),label=f?featureName(f):"Piece";
+    selectedId=null;activePieceDrag=null;renderPieces();renderBank();updateControls();
+    document.getElementById("message").textContent=`${label} deselected. Map pan and zoom are active again.`;
+  }
+
+  function showHint(f){
+    clearTimeout(hintTimer);hintLayer.selectAll("*").remove();
+    hintLayer.append("path").datum(f).attr("d",path).attr("class","hint");
+    const c=path.centroid(f);hintLayer.append("circle").attr("cx",c[0]).attr("cy",c[1]).attr("r",4.5).attr("class","targetDot");
+    hintTimer=setTimeout(()=>hintLayer.selectAll("*").remove(),2200);
+  }
+
+  function evaluate(){
+    if(positions.size!==puzzleFeatures.length||selectedId!==null)return;
+    scores.clear();scoreLayer.selectAll("*").remove();const values=[];
+    for(const f of puzzleFeatures){
+      const id=featureKey(f),placedLL=positions.get(id),trueLL=d3.geoCentroid(f),km=d3.geoDistance(placedLL,trueLL)*EARTH_KM;
+      scores.set(id,km);values.push(km);
+      const p1=projection(placedLL),p2=projection(trueLL);
+      if(p1&&p2){
+        scoreLayer.append("line").attr("x1",p1[0]).attr("y1",p1[1]).attr("x2",p2[0]).attr("y2",p2[1]).attr("class","scoreLine");
+        scoreLayer.append("circle").attr("cx",p2[0]).attr("cy",p2[1]).attr("r",3.5).attr("class","scoreTarget");
+      }
+    }
+    values.sort((a,b)=>a-b);const mean=values.reduce((a,b)=>a+b,0)/values.length,mid=Math.floor(values.length/2),median=values.length%2?values[mid]:(values[mid-1]+values[mid])/2;
+    const summary=document.getElementById("scoreSummary");summary.style.display="block";
+    summary.innerHTML=`<strong>Mean ${Math.round(mean).toLocaleString()} km</strong> · median ${Math.round(median).toLocaleString()} km · best ${Math.round(values[0]).toLocaleString()} km · largest ${Math.round(values[values.length-1]).toLocaleString()} km`;
+    document.getElementById("message").textContent="Scored. Select any piece to revise it; its selected state will bring it to the top.";renderBank();
+  }
+
+  async function prepareMode(key){
+    currentModeKey=key;currentMode=MODES.get(key);
+    if(currentMode.type==="country"){
+      puzzleFeatures=currentMode.ids.map(id=>regionalizeCountry(rawById.get(id),currentMode)).filter(Boolean);
+      regionCountryIds=new Set(puzzleFeatures.map(f=>+f.id));
+      featureByKey=new Map(puzzleFeatures.map(f=>[String(f.id),f]));
+      colors=assignCountryColors(puzzleFeatures);
+      document.getElementById("bankHeading").textContent="Country bank";
+    }else{
+      const data=await ensureAdmin1();
+      let fs=data.features.filter(f=>adminA3(f)===currentMode.a3);
+      if(currentMode.exclude){
+        const excluded=new Set(currentMode.exclude);
+        fs=fs.filter(f=>!excluded.has(adminCode(f)));
+      }
+      if(currentMode.allow){
+        const allowed=new Set(currentMode.allow);
+        fs=fs.filter(f=>allowed.has(adminCode(f)));
+      }
+      puzzleFeatures=fs;
+      regionCountryIds=new Set([currentMode.parentId]);
+      featureByKey=new Map(puzzleFeatures.map(f=>[featureKey(f),f]));
+      colors=assignAdminColors(puzzleFeatures);
+      document.getElementById("bankHeading").textContent="Subdivision bank";
+    }
+  }
+
+  function configureZoomBounds(){
+    const {w,h}=viewport;
+    zoom.extent([[0,0],[w,h]]).translateExtent([[-w*.16,-h*.16],[w*1.16,h*1.16]]);
+  }
+
+  async function loadMode(key){
+    const requested=key;
+    try{
+      await prepareMode(key);
+      if(modeSelect.value!==requested)return;
+      if(!puzzleFeatures.length)throw new Error("No puzzle features found for this mode.");
+      rebuildProjection();
+      positions=new Map();lockedIds=new Set();zOrder=new Map();nextZ=1;scores=new Map();selectedId=null;activePieceDrag=null;currentTransform=d3.zoomIdentity;clearTimeout(hintTimer);
+      const summary=document.getElementById("scoreSummary");summary.style.display="none";summary.innerHTML="";
+      drawBase();renderPieces();renderBank();updateControls();configureZoomBounds();svg.call(zoom.transform,d3.zoomIdentity);
+      const kind=currentMode.type==="country"?"countries":"subdivisions";
+      document.getElementById("message").innerHTML=`<strong>${currentMode.label}.</strong> ${currentMode.note} ${puzzleFeatures.length} ${kind} in this puzzle. Tap a bank item to add it inside your current view.`;
+    }catch(err){
+      document.getElementById("loadingShade").classList.remove("visible");
+      document.getElementById("message").textContent=`Could not load this puzzle: ${err.message}`;
+    }
+  }
+
+  function resize(){
+    const r=document.getElementById("app").getBoundingClientRect(),w=Math.max(320,Math.round(r.width)),h=Math.max(480,Math.round(r.height));
+    viewport={w,h};svg.attr("viewBox",`0 0 ${w} ${h}`);waterRect.attr("width",w).attr("height",h);
+    if(!currentMode||!puzzleFeatures.length)return;
+    rebuildProjection();configureZoomBounds();currentTransform=d3.zoomIdentity;drawBase();renderPieces();scoreLayer.selectAll("*").remove();scores.clear();
+    const summary=document.getElementById("scoreSummary");summary.style.display="none";summary.innerHTML="";
+    svg.call(zoom.transform,d3.zoomIdentity);renderBank();updateControls();
+  }
+
+  document.getElementById("lockFloat").addEventListener("click",event=>{
+    event.stopPropagation();if(selectedId===null)return;
+    const f=selectedFeature();if(!f)return;
+    if(lockedIds.has(selectedId)){lockedIds.delete(selectedId);zOrder.set(selectedId,nextZ++);document.getElementById("message").textContent=`${featureName(f)} unlocked. It remains selected and is now on top.`}
+    else{lockedIds.add(selectedId);document.getElementById("message").textContent=`${featureName(f)} locked. It remains selected until you tap empty map space.`}
+    invalidateScores();renderPieces();renderBank();updateControls();
+  });
+
+  document.getElementById("hintBtn").addEventListener("click",()=>{
+    if(selectedId===null)return;const f=selectedFeature();if(!f)return;showHint(f);
+    document.getElementById("message").textContent=`Showing the true location of ${featureName(f)} briefly.`;
+  });
+  document.getElementById("checkBtn").addEventListener("click",evaluate);
+  document.getElementById("restartBtn").addEventListener("click",()=>loadMode(currentModeKey));
+  document.getElementById("zoomIn").addEventListener("click",()=>{if(selectedId===null)svg.transition().duration(150).call(zoom.scaleBy,1.45)});
+  document.getElementById("zoomOut").addEventListener("click",()=>{if(selectedId===null)svg.transition().duration(150).call(zoom.scaleBy,1/1.45)});
+  document.getElementById("resetView").addEventListener("click",()=>{if(selectedId===null)svg.transition().duration(170).call(zoom.transform,d3.zoomIdentity)});
+  modeSelect.addEventListener("change",()=>loadMode(modeSelect.value));
+
+  svg.on("click.deselect",event=>{
+    if(selectedId===null)return;
+    const t=event.target;if(t&&t.classList&&t.classList.contains("userPiece"))return;
+    deselect();
+  });
+  window.addEventListener("keydown",event=>{if(event.key==="Escape"&&selectedId!==null)deselect()});
+
+  const bank=document.getElementById("bank"),bankToggle=document.getElementById("bankToggle");
+  bankToggle.addEventListener("click",()=>{bank.classList.toggle("collapsed");bankToggle.textContent=bank.classList.contains("collapsed")?"Show":"Hide"});
+
+  const ro=new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(resize,70)});
+  ro.observe(document.getElementById("app"));
+
+  resize();
+  await loadMode(modeSelect.value);
+})();
+</script>
+</body>
+</html>
